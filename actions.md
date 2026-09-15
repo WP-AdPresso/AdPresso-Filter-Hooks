@@ -1,6 +1,6 @@
 # AdPresso Action Hooks
 
-Action hooks (`do_action()`) available in the AdPresso plugin for developers to extend and customize its behavior. Auto-synced from the plugin's own `HOOKS.md` - do not edit here directly.
+Action hooks (`do_action()`) available in the AdPresso plugin for developers to extend and customize its behavior.
 
 ## Lifecycle & Boot
 

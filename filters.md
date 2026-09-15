@@ -1,6 +1,6 @@
 # AdPresso Filter Hooks
 
-Filter hooks (`apply_filters()`) available in the AdPresso plugin for developers to extend and customize its behavior. Auto-synced from the plugin's own `HOOKS.md` - do not edit here directly.
+Filter hooks (`apply_filters()`) available in the AdPresso plugin for developers to extend and customize its behavior.
 
 
 ## Entities & Lifecycle
