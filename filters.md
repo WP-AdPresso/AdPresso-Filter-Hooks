@@ -2,7 +2,6 @@
 
 Filter hooks (`apply_filters()`) available in the AdPresso plugin for developers to extend and customize its behavior.
 
-
 ## Entities & Lifecycle
 
 ### `adpresso_duplicate_post_status`
@@ -166,15 +165,36 @@ add_filter( 'adpresso.output.ad.wrapper', function( $html, $ad_type ) {
 ```
 
 ### `adpresso.output.placeholder`
-Filters the placeholder HTML when a placement has no active ad to show.
+Filters the placeholder of a placement rendered in the browser (JS mode): a `<script type="text/{prefix}-tmpl">` tag whose body is the placement's JS config as JSON. The frontend script replaces it with the ad, so keep the tag, its attributes and its body intact - add to the HTML rather than replacing it.
 - **Parameters:**
   - `string $html`: The placeholder HTML.
   - `AdPresso\Entities\Placement $placement`: The placement entity.
 - **Example:**
 ```php
 add_filter( 'adpresso.output.placeholder', function( $html, $placement ) {
-    return '<div class="advertise-here"><a href="/advertise">Your Ad Here</a></div>';
+    return '<div class="my-ad-slot">' . $html . '</div>';
 }, 10, 2 );
+```
+
+### `adpresso_inline_placeholder_config`
+Whether a JS-mode placeholder carries its config in its body. With it, markup loaded after the page (AJAX, REST, cached fragments) renders on its own; without it, the config only comes from `window.adpressoData`. Meant as an emergency switch, e.g. for an optimizer that alters script contents.
+- **Parameters:**
+  - `bool $inline`: Default `true`.
+  - `AdPresso\Entities\Placement $placement`: The placement entity.
+- **Example:**
+```php
+add_filter( 'adpresso_inline_placeholder_config', '__return_false' );
+```
+
+### `adpresso_dynamic_content_support`
+Loads AdPresso's client scripts on the page even when the page itself renders no ad in the browser, because content loaded after page load (infinite scroll, "load more", AJAX streams) can bring placements of its own. Insert that content with `AdPresso.content.insert()` or call `AdPresso.content.scan()` on it (see [JavaScript API & Events](javascript.md)). Jetpack Infinite Scroll, Ajax Load More, BuddyPress/BuddyBoss and PeepSo turn this on by themselves.
+- **Parameters:**
+  - `bool $supported`: Default `false`.
+- **Example:**
+```php
+add_filter( 'adpresso_dynamic_content_support', function( $supported ) {
+    return $supported || is_singular( 'post' ); // The theme loads the next article on scroll.
+} );
 ```
 
 ### `adpresso_ssr_output_ad_context`
@@ -219,7 +239,7 @@ add_filter( 'adpresso_ad_type_image_frontend_config', function( $config, $ad ) {
 ```
 
 ### `adpresso_html_ad_allow_shortcodes`
-Determines if shortcodes should be processed in HTML ads.
+Determines if shortcodes should be processed in HTML ads - in SSR output and in the content shipped for JS-rendered ads and Headless Delivery (rendered once per request, as that content leaves PHP).
 - **Parameters:**
   - `bool $allow`: Default `true`.
   - `AdPresso\Entities\Ad $ad`: The ad entity.
@@ -451,6 +471,58 @@ add_filter( 'adpresso_requires_frontend_logic', function( $requires, $placement,
 }, 10, 3 );
 ```
 
+### `adpresso_item_requires_consent`
+Filters whether an Ad/Group item requires consent (must be JS-rendered instead of SSR) - the decision `AdPresso\Modules\Privacy\ConsentPolicy::item_requires_consent()` makes for the Privacy module's `adpresso_requires_frontend_logic` callback. The same result is sent to the browser as the item's `requires_consent` flag, so the JS consent gate follows your override too. It is also written into fallback item configs, but the JS consent gate currently only checks the placement's primary item (or its fallback when there is no primary item). Only fires when the Privacy module is active and the item passed backend validation; it can fire several times per item and request, with `$placement` `null` for fallback items.
+- **Parameters:**
+  - `bool $requires_consent`: The policy's decision so far.
+  - `AdPresso\Entities\Entity $item`: The ad or group item.
+  - `AdPresso\Entities\Placement|null $placement`: The placement the item is being resolved for, if known.
+- **Example:**
+```php
+add_filter( 'adpresso_item_requires_consent', function( $requires_consent, $item, $placement ) {
+    // Treat a custom ad type as always privacy-safe.
+    if ( $item instanceof \AdPresso\Entities\Ad && $item->get_type() === 'my_safe_type' ) return false;
+    return $requires_consent;
+}, 10, 3 );
+```
+
+### `adpresso_privacy_exceptional_ad_types`
+Filters the ad types that never need consent on their own (no third-party code) - `ConsentPolicy` applies it for SSR and for the `requires_consent` flag the JS consent gate reads. An ad with custom ad code always needs consent, whatever its type.
+- **Parameters:**
+  - `string[] $types`: Default `[ 'image', 'dummy' ]`.
+- **Example:**
+```php
+add_filter( 'adpresso_privacy_exceptional_ad_types', function( $types ) {
+    $types[] = 'my_first_party_type';
+    return $types;
+} );
+```
+
+### `adpresso_ad_display_limit_reached`
+Filters whether an ad has already reached its "Display Only Once" limit for the current request. Only consulted when the ad's own `display_only_once` meta is enabled; default `false` (no listener means the limit is never enforced, e.g. on a Free install). `AdPresso\Pro\Pipeline\Ad_Rendered_Tracker` answers this on Pro.
+- **Parameters:**
+  - `bool $reached`: Whether the limit was reached so far. Only ever change `false` to `true`, never override another listener's `true` back to `false`.
+  - `int $ad_id`: The ad's ID.
+- **Example:**
+```php
+add_filter( 'adpresso_ad_display_limit_reached', function( $reached, $ad_id ) {
+    return $reached || my_custom_tracker()->already_shown( $ad_id );
+}, 10, 2 );
+```
+
+### `adpresso_ad_link_masking_enabled`
+Filters whether an ad's target link should be cloaked/masked. Default `false` - only an actually-loaded link-masking implementation (Pro's `AdPresso\Pro\Infrastructure\LinkRedirector`) can turn this on, so a stale/lapsed-Pro setting can never cloak into a masked URL that nothing redirects.
+- **Parameters:**
+  - `bool $is_cloaked`: Whether the ad's link should be cloaked so far. Default `false`.
+  - `AdPresso\Entities\Ad $ad`: The ad entity.
+- **Example:**
+```php
+add_filter( 'adpresso_ad_link_masking_enabled', function( $is_cloaked, $ad ) {
+    // Force cloaking on for every ad site-wide.
+    return true;
+}, 10, 2 );
+```
+
 ### `adpresso_global_gates_active`
 Filters whether any global, visitor-dependent gate (e.g. "Show ads for specific user roles", the Pro "Disable ads for bots" setting) is currently configured. Only ever inspects saved setting values, never the current request - used to decide whether the frontend's single, page-wide global-gates AJAX check is worth making at all.
 - **Parameters:**
@@ -474,21 +546,38 @@ add_filter( 'adpresso_global_gate_blocks_visitor', function( $blocked ) {
 ```
 
 ### `adpresso_get_capability`
-Filters the capability required for a specific action.
+Filters the capability required for a specific action. Every permission check in AdPresso (admin menus, REST routes, AJAX handlers, post type capabilities) runs through this filter; Pro maps the actions to its own `adpresso_*` capabilities.
 - **Parameters:**
   - `string $cap`: The capability.
   - `string $action`: The action being performed.
+- **Actions:**
+  - `edit_ad`, `edit_group`, `edit_placement`, `delete_ad`, `delete_group`, `delete_placement`, `duplicate_ad`, `duplicate_group`, `duplicate_placement` (default `edit_posts`)
+  - `edit_others_ad`, `edit_others_group`, `edit_others_placement` (default `edit_others_posts`)
+  - `allow_php_execution` (default `unfiltered_html`; also requires the `ADPRESSO_ALLOW_PHP_EVAL` constant)
+  - `view_analytics`, `manage_settings`, `use_tools`, `create_debug_token`, `view_debug` (default `manage_options`)
 - **Example:**
 ```php
 add_filter( 'adpresso_get_capability', function( $cap, $action ) {
-    if ( $action === 'manage_ads' ) return 'edit_posts';
+    if ( $action === 'view_debug' ) return 'edit_posts';
     return $cap;
 }, 10, 2 );
 ```
 
+### `adpresso_user_can_unfiltered_html`
+Filters whether a user is trusted with unfiltered HTML. AdPresso filters ad code at save time and at render time (by the entity's author) unless this returns true. Pro uses it on multisite to trust whole roles, which WordPress otherwise reserves for super admins. `DISALLOW_UNFILTERED_HTML` short-circuits before the filter runs.
+- **Parameters:**
+  - `bool $allowed`: Result of `user_can( $user_id, 'unfiltered_html' )`.
+  - `int $user_id`: The user (for rendering: the entity author).
+- **Example:**
+```php
+add_filter( 'adpresso_user_can_unfiltered_html', function( $allowed, $user_id ) {
+    return $allowed || user_can( $user_id, 'my_trusted_advertiser' );
+}, 10, 2 );
+```
+
 ### `adpresso_debug_mode_user_cap`
-Filters the capability required to see debug information.
-- **Default:** `'manage_options'`
+Legacy filter for the capability required to see debug information. Applied on top of `adpresso_get_capability( 'view_debug' )`; prefer that filter for new code.
+- **Default:** `adpresso_get_capability( 'view_debug' )`
 - **Example:**
 ```php
 add_filter( 'adpresso_debug_mode_user_cap', function() {
@@ -547,3 +636,4 @@ Opts into `fast-track.php`, a SHORTINIT-based tracking endpoint used instead of 
 add_filter( 'adpresso_enable_fast_tracking', '__return_true' );
 ```
 
+---

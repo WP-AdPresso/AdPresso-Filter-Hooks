@@ -59,6 +59,20 @@ add_action( 'adpresso_ad_saved', function( $post_id, $previous_image_id ) {
 ### `adpresso_register_assets`
 Fires when assets should be registered.
 
+### `adpresso_virtual_placement_resolved`
+Fires once a block/shortcode-rendered ("virtual") placement has resolved to JS-mode output during the current request. Lets code that gates a frontend script by scanning `Runtime::get_processed_data()` on `wp_enqueue_scripts` (which runs before `the_content`, i.e. before any virtual placement exists) re-check now that virtual placement data is available. No parameters.
+
+### `adpresso_ad_rendered`
+Fires once an ad flagged `display_only_once` has actually been rendered this request. `AdPresso\Pro\Pipeline\Ad_Rendered_Tracker::mark_rendered()` listens on this to back the `adpresso_ad_display_limit_reached` filter.
+- **Parameters:**
+  - `int $ad_id`: The ad's ID.
+- **Example:**
+```php
+add_action( 'adpresso_ad_rendered', function( $ad_id ) {
+    my_custom_tracker()->mark_shown( $ad_id );
+} );
+```
+
 ### `adpresso_load_integrations`
 Fires when integrations should be loaded.
 
@@ -148,4 +162,11 @@ Fires when page cache should be cleared (e.g., after saving an ad).
 add_action( 'adpresso_clear_page_cache', function() {
     if ( function_exists( 'w3tc_flush_all' ) ) w3tc_flush_all();
 } );
+```
+
+### `adpresso_invalidate_pipeline_cache`
+Call this to invalidate AdPresso's internal pipeline snapshot cache (the persistent cache of raw Ad/Group/Placement data) from Pro or third-party code that changes ad data outside the normal save/delete hooks AdPresso already listens to.
+- **Example:**
+```php
+do_action( 'adpresso_invalidate_pipeline_cache' );
 ```
